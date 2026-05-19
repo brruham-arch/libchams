@@ -20,11 +20,11 @@ jobs:
 
       - name: Get AML Headers
         run: |
-          git clone --depth 1 https://github.com/AndroidModLoader/AML /tmp/aml_sdk
           mkdir -p include/mod
-          cp /tmp/aml_sdk/mod/amlmod.h    include/mod/
-          cp /tmp/aml_sdk/mod/iaml.h      include/mod/
-          cp /tmp/aml_sdk/mod/interface.h include/mod/ 2>/dev/null || true
+          BASE="https://raw.githubusercontent.com/AndroidModLoader/AML/master/mod"
+          wget -q "$BASE/amlmod.h"    -O include/mod/amlmod.h
+          wget -q "$BASE/iaml.h"      -O include/mod/iaml.h
+          wget -q "$BASE/interface.h" -O include/mod/interface.h
           ls -1 include/mod/
 
       - name: Build
@@ -40,8 +40,6 @@ jobs:
           file libs/armeabi-v7a/libchams.so
           $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm \
             -D libs/armeabi-v7a/libchams.so | grep " [TD] "
-          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm \
-            -D libs/armeabi-v7a/libchams.so | grep " U "
 
       - name: Upload
         uses: actions/upload-artifact@v4
