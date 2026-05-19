@@ -130,14 +130,13 @@ ON_MOD_LOAD() {
     }
     log_write("[CHAMS] Dobby OK");
 
-    // libGTASA base
-    void* hGTASA = dlopen("libGTASA.so", RTLD_NOW | RTLD_NOLOAD);
-    if (!hGTASA) {
+    // libGTASA base — via aml->GetLib, bukan dlopen handle
+    uintptr_t base = aml->GetLib("libGTASA.so");
+    if (!base) {
         log_write("[CHAMS] ERROR: libGTASA not in memory");
         aml->ShowToast(false, "[CHAMS] FAIL: libGTASA");
         return;
     }
-    uintptr_t base = (uintptr_t)hGTASA;
     log_fmt("[CHAMS] base=0x%08x", (unsigned)base);
 
     // SetGlobalColor + GlobalColor — |1 untuk Thumb function pointer
