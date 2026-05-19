@@ -19,12 +19,17 @@ jobs:
           add-to-path: true
 
       - name: Get AML Headers
+        uses: actions/checkout@v4
+        with:
+          repository: AndroidModLoader/AML
+          path: aml_sdk
+
+      - name: Copy AML Headers
         run: |
           mkdir -p include/mod
-          BASE="https://raw.githubusercontent.com/AndroidModLoader/AML/master/mod"
-          wget -q "$BASE/amlmod.h"    -O include/mod/amlmod.h
-          wget -q "$BASE/iaml.h"      -O include/mod/iaml.h
-          wget -q "$BASE/interface.h" -O include/mod/interface.h
+          find aml_sdk -name "amlmod.h" -o -name "iaml.h" -o -name "interface.h" \
+            | xargs -I{} cp {} include/mod/
+          echo "=== Headers ==="
           ls -1 include/mod/
 
       - name: Build
