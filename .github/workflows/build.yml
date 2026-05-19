@@ -18,20 +18,6 @@ jobs:
           ndk-version: r25c
           add-to-path: true
 
-      - name: Get AML Headers
-        uses: actions/checkout@v4
-        with:
-          repository: AndroidModLoader/AML
-          path: aml_sdk
-
-      - name: Copy AML Headers
-        run: |
-          mkdir -p include/mod
-          find aml_sdk -name "amlmod.h" -o -name "iaml.h" -o -name "interface.h" \
-            | xargs -I{} cp {} include/mod/
-          echo "=== Headers ==="
-          ls -1 include/mod/
-
       - name: Build
         run: |
           $ANDROID_NDK_ROOT/ndk-build \
