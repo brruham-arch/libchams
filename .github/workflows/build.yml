@@ -1,0 +1,51 @@
+name: Build libchams
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup NDK r25c
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+          add-to-path: true
+
+      - name: Get AML Headers
+        run: |
+          git clone --depth 1 https://github.com/AndroidModLoader/AML /tmp/aml_sdk
+          mkdir -p include/mod
+          cp /tmp/aml_sdk/mod/amlmod.h    include/mod/
+          cp /tmp/aml_sdk/mod/iaml.h      include/mod/
+          cp /tmp/aml_sdk/mod/interface.h include/mod/ 2>/dev/null || true
+          ls -1 include/mod/
+
+      - name: Build
+        run: |
+          $ANDROID_NDK_ROOT/ndk-build \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=./jni/Android.mk \
+            NDK_APPLICATION_MK=./jni/Application.mk
+
+      - name: Verify
+        run: |
+          ls -lh libs/armeabi-v7a/libchams.so
+          file libs/armeabi-v7a/libchams.so
+          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm \
+            -D libs/armeabi-v7a/libchams.so | grep " [TD] "
+          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm \
+            -D libs/armeabi-v7a/libchams.so | grep " U "
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libchams-arm32
+          path: libs/armeabi-v7a/libchams.so
+          retention-days: 7
