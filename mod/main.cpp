@@ -118,11 +118,18 @@ static void* chams_do(RpAtomic* atomic, RenderCB_t orig_cb) {
     g_inChamsPass = true;
 
     // Pass 1: through-wall
-    // hooked_glDepthFunc/Mask/SetGlobalColor akan intercept panggilan dari dalam orig_cb
+    // Tulis GlobalColor langsung sebelum render — game mungkin override, tapi cukup untuk efek
+    if (pGlobalColor) {
+        pGlobalColor[0] = CHAMS_R;
+        pGlobalColor[1] = CHAMS_G;
+        pGlobalColor[2] = CHAMS_B;
+        pGlobalColor[3] = CHAMS_A;
+    }
     g_chamsPass = 1;
     orig_cb(atomic);
 
     // Pass 2: normal render
+    // GlobalColor sudah diset ulang oleh game sendiri di pass 1, biarkan normal
     g_chamsPass = 2;
     orig_cb(atomic);
 
@@ -168,11 +175,10 @@ ON_MOD_LOAD() {
     log_fmt("[CHAMS] GOT patch glDepthFunc=%d  glDepthMask=%d", (int)g1, (int)g2);
     if (!g1 || !g2) { log_write("[CHAMS] ERROR: GOT patch"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
 
-    // Hook SetGlobalColor via Dobby
-    void* addrSGC = (void*)((base + OFF_SetGlobalColor) | 1U);
-    int r0 = dobbyHook(addrSGC, (void*)hooked_SetGlobalColor, (void**)&orig_SetGlobalColor);
-    log_fmt("[CHAMS] SetGlobalColor hook=%d orig=%p", r0, (void*)orig_SetGlobalColor);
-    if (r0 != 0) { log_write("[CHAMS] WARN: SetGlobalColor hook failed"); }
+    // SetGlobalColor: resolve saja, tidak di-hook via Dobby
+    // Dobby hook pada fungsi ini menyebabkan SIGILL (mode mismatch)
+    pSetGlobalColor = (SetGlobalColor_t)((base + OFF_SetGlobalColor) | 1U);
+    log_fmt("[CHAMS] SetGlobalColor resolved=0x%08x", (unsigned)(base + OFF_SetGlobalColor));
 
     // Hook RenderPedCB
     void* addrPed = (void*)(base + OFF_RenderPedCB);
