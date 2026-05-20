@@ -1,7 +1,7 @@
 /*
- * libchams v1.2 — GTA SA Android Chams Mod
+ * libchams v1.4 — GTA SA Android Chams Mod
  * Author : brruham
- * Fix: remove SetGlobalColor Dobby hook (SIGILL), direct GlobalColor write
+ * v1.4: hook glDrawElements GOT (bukan depth state di RenderPedCB)
  */
 
 #include <stdint.h>
@@ -23,29 +23,26 @@
 
 #define OFF_RenderPedCB     0x005d605cU
 #define OFF_RenderPlayerCB  0x005d602cU
-#define OFF_SetGlobalColor  0x001b4fd0U
-#define OFF_GlobalColor     0x006b3398U
 #define GOT_glDepthFunc     0x0066ed70U
 #define GOT_glDepthMask     0x00670094U
+#define GOT_glDrawElements  0x00674b80U
 
-MYMOD(brruham.libchams, ChamsMod, 1.3, brruham)
+MYMOD(brruham.libchams, ChamsMod, 1.4, brruham)
 
 typedef void*  RpAtomic;
 typedef void* (*RenderCB_t)(RpAtomic*);
-typedef void  (*SetGlobalColor_t)(float, float, float, float);
 typedef void  (*glDepthFunc_t)(GLenum);
 typedef void  (*glDepthMask_t)(GLboolean);
+typedef void  (*glDrawElements_t)(GLenum, GLsizei, GLenum, const void*);
 
-static RenderCB_t        orig_RenderPedCB    = nullptr;
-static RenderCB_t        orig_RenderPlayerCB = nullptr;
-static SetGlobalColor_t  pSetGlobalColor     = nullptr;
-static float*            pGlobalColor        = nullptr;
-static glDepthFunc_t     real_glDepthFunc    = nullptr;
-static glDepthMask_t     real_glDepthMask    = nullptr;
+static RenderCB_t       orig_RenderPedCB    = nullptr;
+static RenderCB_t       orig_RenderPlayerCB = nullptr;
+static glDepthFunc_t    real_glDepthFunc    = nullptr;
+static glDepthMask_t    real_glDepthMask    = nullptr;
+static glDrawElements_t real_glDrawElements = nullptr;
 
 static bool g_chamsEnabled = true;
-static bool g_inChamsPass  = false;
-static int  g_chamsPass    = 0;
+static bool g_inPedRender  = false;
 static int  g_callCount    = 0;
 
 static void log_write(const char* msg) {
@@ -67,54 +64,52 @@ static bool patch_got(uintptr_t got_addr, void* new_func) {
     return true;
 }
 
-static void hooked_glDepthFunc(GLenum func) {
-    if (g_chamsPass == 1) { real_glDepthFunc(GL_ALWAYS); return; }
-    real_glDepthFunc(func);
-}
-static void hooked_glDepthMask(GLboolean flag) {
-    if (g_chamsPass == 1) { real_glDepthMask(GL_FALSE); return; }
-    real_glDepthMask(flag);
-}
+// ── glDrawElements hook — titik actual draw ────────────────────────────────
+static void hooked_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+    if (!g_chamsEnabled || !g_inPedRender) {
+        real_glDrawElements(mode, count, type, indices);
+        return;
+    }
 
-static void* chams_do(RpAtomic* atomic, RenderCB_t orig_cb) {
-    if (!g_chamsEnabled || g_inChamsPass || !orig_cb)
-        return orig_cb ? orig_cb(atomic) : nullptr;
-
-    g_inChamsPass = true;
-
-    // Pass 1: through-wall — depth ALWAYS, warna merah via glUniform4fv GOT
+    // Pass 1: through-wall (depth ALWAYS, no depth write)
     real_glDepthFunc(GL_ALWAYS);
     real_glDepthMask(GL_FALSE);
-    g_chamsPass = 1;
-    orig_cb(atomic);
+    real_glDrawElements(mode, count, type, indices);
 
-    // Pass 2: normal depth
+    // Pass 2: normal
     real_glDepthFunc(GL_LEQUAL);
     real_glDepthMask(GL_TRUE);
-    g_chamsPass = 2;
-    orig_cb(atomic);
-
-    // Restore depth state
-    real_glDepthFunc(GL_LEQUAL);
-    real_glDepthMask(GL_TRUE);
-
-    g_chamsPass = 0;
-    g_inChamsPass = false;
-    return atomic;
+    real_glDrawElements(mode, count, type, indices);
 }
 
+// ── RenderPedCB — set flag saja, jangan ubah GL state ─────────────────────
 static void* hooked_RenderPedCB(RpAtomic* a) {
     g_callCount++;
-    if (g_callCount == 1 || g_callCount % 500 == 0)
-        log_fmt("[CHAMS] RenderPedCB called #%d gl=%p", g_callCount, (void*)real_glDepthFunc);
-    return chams_do(a, orig_RenderPedCB);
+    if (g_callCount == 1 || g_callCount % 1000 == 0)
+        log_fmt("[CHAMS] PedCB #%d", g_callCount);
+
+    if (!g_chamsEnabled || !orig_RenderPedCB) {
+        return orig_RenderPedCB ? orig_RenderPedCB(a) : nullptr;
+    }
+    g_inPedRender = true;
+    void* r = orig_RenderPedCB(a);
+    g_inPedRender = false;
+    return r;
 }
-static void* hooked_RenderPlayerCB(RpAtomic* a) { return chams_do(a, orig_RenderPlayerCB); }
+
+static void* hooked_RenderPlayerCB(RpAtomic* a) {
+    if (!g_chamsEnabled || !orig_RenderPlayerCB) {
+        return orig_RenderPlayerCB ? orig_RenderPlayerCB(a) : nullptr;
+    }
+    g_inPedRender = true;
+    void* r = orig_RenderPlayerCB(a);
+    g_inPedRender = false;
+    return r;
+}
 
 ON_MOD_PRELOAD() {
     remove(LOGFILE);
-    log_write("[CHAMS] =====================");
-    log_write("[CHAMS] PreLoad v1.3");
+    log_write("[CHAMS] PreLoad v1.4");
 }
 
 ON_MOD_LOAD() {
@@ -123,42 +118,40 @@ ON_MOD_LOAD() {
     void* hDobby = dlopen("libdobby.so", RTLD_NOW | RTLD_GLOBAL);
     if (!hDobby) { log_write("[CHAMS] ERROR: libdobby"); aml->ShowToast(false,"[CHAMS] FAIL: dobby"); return; }
     auto dobbyHook = (int(*)(void*,void*,void**))dlsym(hDobby, "DobbyHook");
-    if (!dobbyHook) { log_write("[CHAMS] ERROR: DobbyHook sym"); aml->ShowToast(false,"[CHAMS] FAIL: DobbyHook"); return; }
-    log_write("[CHAMS] Dobby OK");
+    if (!dobbyHook) { log_write("[CHAMS] ERROR: DobbyHook"); aml->ShowToast(false,"[CHAMS] FAIL: DobbyHook"); return; }
 
     uintptr_t base = aml->GetLib("libGTASA.so");
     if (!base) { log_write("[CHAMS] ERROR: libGTASA"); aml->ShowToast(false,"[CHAMS] FAIL: base"); return; }
     log_fmt("[CHAMS] base=0x%08x", (unsigned)base);
 
-    pSetGlobalColor = (SetGlobalColor_t)((base + OFF_SetGlobalColor) | 1U);
-    pGlobalColor    = (float*)(base + OFF_GlobalColor);
-    log_fmt("[CHAMS] GlobalColor=0x%08x [%.2f %.2f %.2f %.2f]",
-            (unsigned)(uintptr_t)pGlobalColor,
-            pGlobalColor[0], pGlobalColor[1], pGlobalColor[2], pGlobalColor[3]);
-
     void* hGLES = dlopen("libGLESv2.so", RTLD_NOW | RTLD_GLOBAL);
     if (!hGLES) { log_write("[CHAMS] ERROR: GLESv2"); aml->ShowToast(false,"[CHAMS] FAIL: GLESv2"); return; }
-    real_glDepthFunc = (glDepthFunc_t)dlsym(hGLES, "glDepthFunc");
-    real_glDepthMask = (glDepthMask_t)dlsym(hGLES, "glDepthMask");
-    if (!real_glDepthFunc || !real_glDepthMask) { log_write("[CHAMS] ERROR: GL funcs"); aml->ShowToast(false,"[CHAMS] FAIL: GLfuncs"); return; }
-    log_fmt("[CHAMS] glDepthFunc=%p  glDepthMask=%p", (void*)real_glDepthFunc, (void*)real_glDepthMask);
+    real_glDepthFunc    = (glDepthFunc_t)   dlsym(hGLES, "glDepthFunc");
+    real_glDepthMask    = (glDepthMask_t)   dlsym(hGLES, "glDepthMask");
+    real_glDrawElements = (glDrawElements_t)dlsym(hGLES, "glDrawElements");
+    if (!real_glDepthFunc || !real_glDepthMask || !real_glDrawElements) {
+        log_write("[CHAMS] ERROR: GL funcs");
+        aml->ShowToast(false,"[CHAMS] FAIL: GLfuncs");
+        return;
+    }
+    log_fmt("[CHAMS] glDrawElements=%p", (void*)real_glDrawElements);
 
-    bool g1 = patch_got(base + GOT_glDepthFunc, (void*)hooked_glDepthFunc);
-    bool g2 = patch_got(base + GOT_glDepthMask, (void*)hooked_glDepthMask);
-    log_fmt("[CHAMS] GOT patch glDepthFunc=%d  glDepthMask=%d", (int)g1, (int)g2);
-    if (!g1 || !g2) { log_write("[CHAMS] ERROR: GOT patch"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
+    // GOT patch: glDepthFunc, glDepthMask, glDrawElements
+    bool g1 = patch_got(base + GOT_glDepthFunc,    (void*)real_glDepthFunc);   // restore real
+    bool g2 = patch_got(base + GOT_glDepthMask,    (void*)real_glDepthMask);   // restore real
+    bool g3 = patch_got(base + GOT_glDrawElements, (void*)hooked_glDrawElements);
+    log_fmt("[CHAMS] GOT: DepthFunc=%d DepthMask=%d DrawElements=%d", (int)g1, (int)g2, (int)g3);
+    if (!g3) { log_write("[CHAMS] ERROR: GOT DrawElements"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
 
-    void* addrPed = (void*)((base + OFF_RenderPedCB) | 1U);
-    int r1 = dobbyHook(addrPed, (void*)((uintptr_t)hooked_RenderPedCB | 1U), (void**)&orig_RenderPedCB);
-    log_fmt("[CHAMS] RenderPedCB hook=%d orig=%p", r1, (void*)orig_RenderPedCB);
-    if (r1 != 0 || !orig_RenderPedCB) { log_write("[CHAMS] ERROR: PedCB"); aml->ShowToast(false,"[CHAMS] FAIL: PedCB"); return; }
-
+    // Hook RenderPedCB + RenderPlayerCB
+    void* addrPed    = (void*)((base + OFF_RenderPedCB)    | 1U);
     void* addrPlayer = (void*)((base + OFF_RenderPlayerCB) | 1U);
+    int r1 = dobbyHook(addrPed,    (void*)((uintptr_t)hooked_RenderPedCB    | 1U), (void**)&orig_RenderPedCB);
     int r2 = dobbyHook(addrPlayer, (void*)((uintptr_t)hooked_RenderPlayerCB | 1U), (void**)&orig_RenderPlayerCB);
+    log_fmt("[CHAMS] RenderPedCB hook=%d orig=%p", r1, (void*)orig_RenderPedCB);
     log_fmt("[CHAMS] RenderPlayerCB hook=%d orig=%p", r2, (void*)orig_RenderPlayerCB);
-    if (r2 != 0) log_write("[CHAMS] WARN: RenderPlayerCB hook failed (non-fatal)");
+    if (r1 != 0) { log_write("[CHAMS] ERROR: PedCB"); aml->ShowToast(false,"[CHAMS] FAIL: PedCB"); return; }
 
-    log_write("[CHAMS] =====================");
-    log_write("[CHAMS] All hooks OK v1.3");
-    aml->ShowToast(false, "[CHAMS] v1.3 Loaded OK");
+    log_write("[CHAMS] All hooks OK v1.4");
+    aml->ShowToast(false, "[CHAMS] v1.4 Loaded OK");
 }
