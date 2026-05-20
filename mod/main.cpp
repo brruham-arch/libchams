@@ -82,17 +82,9 @@ static void* chams_do(RpAtomic* atomic, RenderCB_t orig_cb) {
 
     g_inChamsPass = true;
 
-    // Pass 1: through-wall
-    // Panggil real_glDepthFunc langsung — tidak bergantung pada game memanggil ulang per-atomic
+    // Pass 1: through-wall — depth ALWAYS, warna merah via glUniform4fv GOT
     real_glDepthFunc(GL_ALWAYS);
     real_glDepthMask(GL_FALSE);
-    if (pGlobalColor) {
-        pGlobalColor[0] = CHAMS_R;
-        pGlobalColor[1] = CHAMS_G;
-        pGlobalColor[2] = CHAMS_B;
-        pGlobalColor[3] = CHAMS_A;
-    }
-    if (pSetGlobalColor) pSetGlobalColor(CHAMS_R, CHAMS_G, CHAMS_B, CHAMS_A);
     g_chamsPass = 1;
     orig_cb(atomic);
 
@@ -101,6 +93,10 @@ static void* chams_do(RpAtomic* atomic, RenderCB_t orig_cb) {
     real_glDepthMask(GL_TRUE);
     g_chamsPass = 2;
     orig_cb(atomic);
+
+    // Restore depth state
+    real_glDepthFunc(GL_LEQUAL);
+    real_glDepthMask(GL_TRUE);
 
     g_chamsPass = 0;
     g_inChamsPass = false;
