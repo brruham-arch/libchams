@@ -28,7 +28,7 @@
 #define GOT_glDepthFunc     0x0066ed70U
 #define GOT_glDepthMask     0x00670094U
 
-MYMOD(brruham.libchams, ChamsMod, 1.2, brruham)
+MYMOD(brruham.libchams, ChamsMod, 1.3, brruham)
 
 typedef void*  RpAtomic;
 typedef void* (*RenderCB_t)(RpAtomic*);
@@ -112,7 +112,7 @@ static void* hooked_RenderPlayerCB(RpAtomic* a) { return chams_do(a, orig_Render
 ON_MOD_PRELOAD() {
     remove(LOGFILE);
     log_write("[CHAMS] =====================");
-    log_write("[CHAMS] PreLoad v1.2");
+    log_write("[CHAMS] PreLoad v1.3");
 }
 
 ON_MOD_LOAD() {
@@ -146,17 +146,17 @@ ON_MOD_LOAD() {
     log_fmt("[CHAMS] GOT patch glDepthFunc=%d  glDepthMask=%d", (int)g1, (int)g2);
     if (!g1 || !g2) { log_write("[CHAMS] ERROR: GOT patch"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
 
-    void* addrPed = (void*)(base + OFF_RenderPedCB);
+    void* addrPed = (void*)((base + OFF_RenderPedCB) | 1U);
     int r1 = dobbyHook(addrPed, (void*)((uintptr_t)hooked_RenderPedCB | 1U), (void**)&orig_RenderPedCB);
     log_fmt("[CHAMS] RenderPedCB hook=%d orig=%p", r1, (void*)orig_RenderPedCB);
     if (r1 != 0 || !orig_RenderPedCB) { log_write("[CHAMS] ERROR: PedCB"); aml->ShowToast(false,"[CHAMS] FAIL: PedCB"); return; }
 
-    void* addrPlayer = (void*)(base + OFF_RenderPlayerCB);
+    void* addrPlayer = (void*)((base + OFF_RenderPlayerCB) | 1U);
     int r2 = dobbyHook(addrPlayer, (void*)((uintptr_t)hooked_RenderPlayerCB | 1U), (void**)&orig_RenderPlayerCB);
     log_fmt("[CHAMS] RenderPlayerCB hook=%d orig=%p", r2, (void*)orig_RenderPlayerCB);
     if (r2 != 0) log_write("[CHAMS] WARN: RenderPlayerCB hook failed (non-fatal)");
 
     log_write("[CHAMS] =====================");
-    log_write("[CHAMS] All hooks OK v1.2");
-    aml->ShowToast(false, "[CHAMS] v1.2 Loaded OK");
+    log_write("[CHAMS] All hooks OK v1.3");
+    aml->ShowToast(false, "[CHAMS] v1.3 Loaded OK");
 }
