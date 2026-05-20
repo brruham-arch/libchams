@@ -26,20 +26,23 @@
 #define GOT_glDepthFunc     0x0066ed70U
 #define GOT_glDepthMask     0x00670094U
 #define GOT_glDrawElements  0x00674b80U
+#define GOT_glUniform4fv    0x00673c98U
 
-MYMOD(brruham.libchams, ChamsMod, 1.4, brruham)
+MYMOD(brruham.libchams, ChamsMod, 1.5, brruham)
 
 typedef void*  RpAtomic;
 typedef void* (*RenderCB_t)(RpAtomic*);
 typedef void  (*glDepthFunc_t)(GLenum);
 typedef void  (*glDepthMask_t)(GLboolean);
 typedef void  (*glDrawElements_t)(GLenum, GLsizei, GLenum, const void*);
+typedef void  (*glUniform4fv_t)(GLint, GLsizei, const GLfloat*);
 
 static RenderCB_t       orig_RenderPedCB    = nullptr;
 static RenderCB_t       orig_RenderPlayerCB = nullptr;
 static glDepthFunc_t    real_glDepthFunc    = nullptr;
 static glDepthMask_t    real_glDepthMask    = nullptr;
 static glDrawElements_t real_glDrawElements = nullptr;
+static glUniform4fv_t    real_glUniform4fv   = nullptr;
 
 static bool g_chamsEnabled = true;
 static bool g_inPedRender  = false;
@@ -62,6 +65,15 @@ static bool patch_got(uintptr_t got_addr, void* new_func) {
     *(void**)got_addr = new_func;
     __builtin___clear_cache((char*)got_addr, (char*)got_addr + 4);
     return true;
+}
+
+// ── glUniform4fv hook — override warna saat ped render ────────────────────────
+static const GLfloat chams_color[] = { CHAMS_R, CHAMS_G, CHAMS_B, CHAMS_A };
+static void hooked_glUniform4fv(GLint loc, GLsizei count, const GLfloat* val) {
+    if (g_inPedRender && g_chamsEnabled)
+        real_glUniform4fv(loc, 1, chams_color);
+    else
+        real_glUniform4fv(loc, count, val);
 }
 
 // ── glDrawElements hook — titik actual draw ────────────────────────────────
@@ -109,7 +121,7 @@ static void* hooked_RenderPlayerCB(RpAtomic* a) {
 
 ON_MOD_PRELOAD() {
     remove(LOGFILE);
-    log_write("[CHAMS] PreLoad v1.4");
+    log_write("[CHAMS] PreLoad v1.5");
 }
 
 ON_MOD_LOAD() {
@@ -129,6 +141,7 @@ ON_MOD_LOAD() {
     real_glDepthFunc    = (glDepthFunc_t)   dlsym(hGLES, "glDepthFunc");
     real_glDepthMask    = (glDepthMask_t)   dlsym(hGLES, "glDepthMask");
     real_glDrawElements = (glDrawElements_t)dlsym(hGLES, "glDrawElements");
+    real_glUniform4fv   = (glUniform4fv_t)  dlsym(hGLES, "glUniform4fv");
     if (!real_glDepthFunc || !real_glDepthMask || !real_glDrawElements) {
         log_write("[CHAMS] ERROR: GL funcs");
         aml->ShowToast(false,"[CHAMS] FAIL: GLfuncs");
@@ -140,6 +153,8 @@ ON_MOD_LOAD() {
     bool g1 = patch_got(base + GOT_glDepthFunc,    (void*)real_glDepthFunc);   // restore real
     bool g2 = patch_got(base + GOT_glDepthMask,    (void*)real_glDepthMask);   // restore real
     bool g3 = patch_got(base + GOT_glDrawElements, (void*)hooked_glDrawElements);
+    bool g4 = patch_got(base + GOT_glUniform4fv,    (void*)hooked_glUniform4fv);
+    log_fmt("[CHAMS] GOT Uniform4fv=%d", (int)g4);
     log_fmt("[CHAMS] GOT: DepthFunc=%d DepthMask=%d DrawElements=%d", (int)g1, (int)g2, (int)g3);
     if (!g3) { log_write("[CHAMS] ERROR: GOT DrawElements"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
 
@@ -152,6 +167,6 @@ ON_MOD_LOAD() {
     log_fmt("[CHAMS] RenderPlayerCB hook=%d orig=%p", r2, (void*)orig_RenderPlayerCB);
     if (r1 != 0) { log_write("[CHAMS] ERROR: PedCB"); aml->ShowToast(false,"[CHAMS] FAIL: PedCB"); return; }
 
-    log_write("[CHAMS] All hooks OK v1.4");
-    aml->ShowToast(false, "[CHAMS] v1.4 Loaded OK");
+    log_write("[CHAMS] All hooks OK v1.5");
+    aml->ShowToast(false, "[CHAMS] v1.5 Loaded OK");
 }
