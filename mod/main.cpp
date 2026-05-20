@@ -46,6 +46,7 @@ static glDepthMask_t     real_glDepthMask    = nullptr;
 static bool g_chamsEnabled = true;
 static bool g_inChamsPass  = false;
 static int  g_chamsPass    = 0;
+static int  g_callCount    = 0;
 
 static void log_write(const char* msg) {
     __android_log_print(ANDROID_LOG_DEBUG, LOGTAG, "%s", msg);
@@ -106,7 +107,12 @@ static void* chams_do(RpAtomic* atomic, RenderCB_t orig_cb) {
     return atomic;
 }
 
-static void* hooked_RenderPedCB(RpAtomic* a)    { return chams_do(a, orig_RenderPedCB); }
+static void* hooked_RenderPedCB(RpAtomic* a) {
+    g_callCount++;
+    if (g_callCount == 1 || g_callCount % 500 == 0)
+        log_fmt("[CHAMS] RenderPedCB called #%d gl=%p", g_callCount, (void*)real_glDepthFunc);
+    return chams_do(a, orig_RenderPedCB);
+}
 static void* hooked_RenderPlayerCB(RpAtomic* a) { return chams_do(a, orig_RenderPlayerCB); }
 
 ON_MOD_PRELOAD() {
