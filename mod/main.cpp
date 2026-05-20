@@ -147,12 +147,12 @@ ON_MOD_LOAD() {
     if (!g1 || !g2) { log_write("[CHAMS] ERROR: GOT patch"); aml->ShowToast(false,"[CHAMS] FAIL: GOT"); return; }
 
     void* addrPed = (void*)(base + OFF_RenderPedCB);
-    int r1 = dobbyHook(addrPed, (void*)hooked_RenderPedCB, (void**)&orig_RenderPedCB);
+    int r1 = dobbyHook(addrPed, (void*)((uintptr_t)hooked_RenderPedCB | 1U), (void**)&orig_RenderPedCB);
     log_fmt("[CHAMS] RenderPedCB hook=%d orig=%p", r1, (void*)orig_RenderPedCB);
     if (r1 != 0 || !orig_RenderPedCB) { log_write("[CHAMS] ERROR: PedCB"); aml->ShowToast(false,"[CHAMS] FAIL: PedCB"); return; }
 
     void* addrPlayer = (void*)(base + OFF_RenderPlayerCB);
-    int r2 = dobbyHook(addrPlayer, (void*)hooked_RenderPlayerCB, (void**)&orig_RenderPlayerCB);
+    int r2 = dobbyHook(addrPlayer, (void*)((uintptr_t)hooked_RenderPlayerCB | 1U), (void**)&orig_RenderPlayerCB);
     log_fmt("[CHAMS] RenderPlayerCB hook=%d orig=%p", r2, (void*)orig_RenderPlayerCB);
     if (r2 != 0) log_write("[CHAMS] WARN: RenderPlayerCB hook failed (non-fatal)");
 
